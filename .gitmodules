@@ -1,3 +1,9 @@
 [submodule "master"]
 	path = master
 	url = https://github.com/kladief/window-engine.git
+[submodule "window-engine"]
+	path = window-engine
+	url = https://github.com/kladief/window-engine.git
+[submodule "engine/window-engine"]
+	path = engine/window-engine
+	url = https://github.com/kladief/window-engine.git

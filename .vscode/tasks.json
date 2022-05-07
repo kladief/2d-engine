@@ -5,9 +5,15 @@
             "label": "C/C++: g++.exe сборка активного файла",
             "command": "C:\\Program Files\\msys2\\mingw64\\bin\\g++.exe",
             "args": [
+                "-mwindows",
+                "-municode",
                 "-fdiagnostics-color=always",
                 "-g",
                 "main.cpp",
+                "engine\\window-engine\\Pixel.cpp",
+                "engine\\Engine.cpp",
+                "-lwindowscodecs",
+                "-lOle32",
                 "-o",
                 "run.exe"
             ],
