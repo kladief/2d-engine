@@ -10,3 +10,7 @@ struct objectCoord{
         z=a.z;
     }
 };
+struct mouseButton{
+    bool leftButton=false;
+    bool rightButton=false;
+};

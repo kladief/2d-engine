@@ -1,12 +1,63 @@
 #include "Engine.h"
 
-void Engine::Object::LoadHBM(HBITMAP* Tx,RECT rect){
+
+float Engine::Object::_getAngle(double sin,double cos){// получаем угол из sin и cos
+    int ang=acos(cos)*180/M_PI;
+    if(sin<0 && cos<0){
+        ang=180+abs(asin(sin)*180/M_PI);
+    }
+    else if(cos>0 && sin<0){
+        ang=270+asin(cos)*180/M_PI;
+    }
+    return (float)ang/(float)360;
+}
+std::vector<Scripts::_script*> Scripts::_getScripts(){// возвращаем вектор со всеми скриптами
+    return activeScript;
+}
+COORD Engine::getMousePos(){// позиция мыши в окне
+    POINT pos;
+    GetCursorPos(&pos);
+    RECT wndRect;
+    GetWindowRect(pix.getWnd(),&wndRect);
+    if(pos.x<wndRect.left || pos.y<wndRect.top || pos.x>wndRect.right || pos.y>wndRect.bottom){
+        return {0,0};
+    }
+    return (COORD){(SHORT)(pos.x-wndRect.left) , (SHORT)(pos.y-wndRect.top)};
+}
+bool Scripts::_script::check(){
+    if(func()){
+        Delete(name);
+        return true;
+    }
+    return false;
+}
+void Scripts::create(std::wstring name, std::function<bool()> func){// создаем новый скрипт
+    _script scr(func);
+    scr._setDeleteFunc([this](std::wstring name){
+        DeleteScript(name);
+    },name);
+    scripts[name]=scr;
+}
+void Scripts::create(std::wstring name, Scripts::_script script){
+    script._setDeleteFunc([this](std::wstring name){
+        DeleteScript(name);
+    },name);
+    scripts[name]=script;
+}
+void Scripts::DeleteScript(std::wstring name){
+    for(int i=0;i<activeScript.size();i++){
+        if(activeScript[i]==&(scripts[name])){
+            activeScript.erase((activeScript.begin()+i));
+        }
+    }
+}
+void Engine::Object::LoadHBM(HBITMAP* Tx,RECT rect){// загружаем текстуру и ограничивающий прямоугольник в обьект
     tx=0;
     if(Tx)
         tx=Tx;
     txBox=rect;
 }
-HBITMAP* Engine::loadTexture(wchar_t* txName,RECT rect){
+HBITMAP* Engine::loadTexture(wchar_t* txName,RECT rect){ // загружаем текстуру из файла
     if(textures.find(txName)==textures.end()){
         HBITMAP* tx=new HBITMAP;
         *tx=loadImage(txName);
@@ -51,7 +102,7 @@ Engine::~Engine(){
         delete (ObjVector->second);
     }
 }
-bool Engine::render(){
+bool Engine::render(Scripts* script){ // основная функция, вней :происходит рендер, обработка сообщений окна, обработка скриптов
     for(;;){
         if(!pix.process()){
             return false;
@@ -100,17 +151,35 @@ bool Engine::render(){
                 keyboardInput.erase(keyboardInput.begin());
                 break;
             }
+            case WM_LBUTTONDOWN:
+                mouseButtons.leftButton=true;
+                break;
+            case WM_RBUTTONDOWN:
+                mouseButtons.rightButton=true;
+                break;
+            case WM_LBUTTONUP:
+                mouseButtons.leftButton=false;
+                break;
+            case WM_RBUTTONUP:
+                mouseButtons.rightButton=false;
+                break;
+            
         }
     }
     Exit:
 
     for(int i=0;;i++){
+        std::vector<Scripts::_script *> scripts = script->_getScripts();
+        for(auto scr=scripts.begin();scr < scripts.end();scr++){
+            (*scr)->check();
+        }
+        std::cout<<"rotate="<<player->getRotate()<<std::endl;
         if(objects.find(i) != objects.end()){
             for(auto obj=objects[i]->begin(); obj<objects[i]->end() ;obj++){
                 if((*obj)->getAnimation()){
                     (*obj)->getAnimation()->next();
                 }
-                pix.printBitMap(*(*obj)->getTx(),toCOORD((*obj)->getCoord()),(*obj)->getRect());
+                pix.printBitMap(*(*obj)->getTx(),toCOORD((*obj)->getCoord()),(*obj)->getRect(),true,(*obj)->getRotate());
             }
         }
         else{
@@ -159,18 +228,95 @@ COORD Engine::playerMove(COORD coord){
 Engine::Engine(HINSTANCE hInst){
     pix.beginPaint(hInst);
 }
-void Engine::Object::Animation::next(){
+void Engine::Object::Animation::next(){// загружаем в указатель на текстуру обьекта следующий кадр анимации
     tickNum++;
     if(tickNum==tick){
+        if(textures.size()==txNum){
+            txNum=0;
+        }
         tickNum=0;
         *tx=textures[txNum];
         txNum++;
-        if(textures.size()==txNum)
-            txNum=0;
     }
 }
 
-HBITMAP Engine::loadImage(wchar_t* wcharFilename)
+Scripts::_script Engine::Object::CreateAnimation(std::wstring name,std::vector<HBITMAP*> hBms){
+    animations[name]=new Animation(&tx,hBms);
+    Engine::Object::Animation* animatonPtr=animations[name];
+    HBITMAP* Tx=tx;
+    Scripts::_script script([this,animatonPtr,Tx]()->bool{
+        int txSize=0;
+        int txNum=0;
+        animatonPtr->_getTxSizeTickNum(&txSize,&txNum);
+        if(txSize==txNum){
+            (this->animation)->restart();
+            this->animation=nullptr;
+            tx=Tx;
+            return true;
+        }
+        return false;
+    });
+    return script;
+}
+Engine::Object::Animation* Engine::Object::getAnimation(std::wstring name){
+    if(name!=L" ")
+        return animations[name];
+    return animation;
+}
+
+bool Engine::Object::setAnimation(Animation* animation){
+    if((this->animation)){
+        if(!(this->animation->interrupts)){
+            this->animation=animation;
+        }
+        else
+            return false;
+    }
+    else{
+        this->animation=animation;
+    }
+    return true;
+}
+
+RECT Engine::Object::getRect(){
+    if(!scale){
+        return txBox;
+    }
+    BITMAP bm;
+    GetObject(*tx,sizeof(bm),&bm);
+    RECT rectToReturn={0,0,(SHORT)(bm.bmWidth*scale),(SHORT)(bm.bmHeight*scale)};
+    return rectToReturn;
+}
+void Engine::Object::Animation::restart(){
+    txNum=0;
+    tickNum=0;
+    tick=1;
+}
+std::vector<HBITMAP*> bakeTexture(std::vector<HBITMAP*> front,std::vector<HBITMAP*> behind){
+    std::vector<HBITMAP*> bakeTX(front.size(),new HBITMAP);
+    BITMAP bm;
+    GetObject(front[0],sizeof(bm),&bm);
+    COORD txSize={(SHORT)bm.bmWidth,(SHORT)bm.bmHeight};
+    for(int i; i!=bakeTX.size();i++){
+        front[i];
+        HBITMAP* tx=new HBITMAP;
+        HDC main=GetDC(0);
+        *tx=CreateCompatibleBitmap(main,txSize.X,txSize.Y);
+        HDC bakeHDC=CreateCompatibleDC(main);
+        HDC tempHDC=CreateCompatibleDC(main);
+        
+        SelectObject(tempHDC,*(front[i]));
+        BitBlt(bakeHDC,0,0,txSize.X,txSize.Y,tempHDC,0,0,SRCCOPY);
+
+        SelectObject(tempHDC,*(behind[i]));
+        BitBlt(bakeHDC,0,0,txSize.X,txSize.Y,tempHDC,0,0,SRCCOPY);
+        DeleteObject(main);
+        DeleteObject(bakeHDC);
+        DeleteObject(tempHDC);
+    }
+    return bakeTX;
+}
+HBITMAP Engine::loadImage(wchar_t* wcharFilename)// загружаем текстуру из файла
 {
 	IWICBitmapDecoder *decoder = NULL;
     IWICImagingFactory* factory;
