@@ -87,6 +87,7 @@ HBITMAP* Engine::loadTexture(wchar_t* txName,RECT rect){ // загружаем �
     return txNew;
 }
 void Engine::setObject(Engine::Object* obj,int lvl,int objType){
+    obj->setLvL(lvl);
     if(objects.find(lvl)!=objects.end()){
         objects[lvl]->push_back(obj);
     }
@@ -100,6 +101,10 @@ void Engine::setObject(Engine::Object* obj,int lvl,int objType){
 Engine::~Engine(){
     for(auto ObjVector=objects.begin(); ObjVector!=objects.end() ;ObjVector++){
         delete (ObjVector->second);
+    }
+    for(auto bakeVector=bakeTextureVector.begin(); bakeVector!=bakeTextureVector.end() ;bakeVector++){
+        if(**bakeVector)
+            delete *bakeVector;
     }
 }
 bool Engine::render(Scripts* script){ // основная функция, вней :происходит рендер, обработка сообщений окна, обработка скриптов
@@ -179,7 +184,7 @@ bool Engine::render(Scripts* script){ // основная функция, вне
                 if((*obj)->getAnimation()){
                     (*obj)->getAnimation()->next();
                 }
-                pix.printBitMap(*(*obj)->getTx(),toCOORD((*obj)->getCoord()),(*obj)->getRect(),true,(*obj)->getRotate());
+                pix.printBitMap(*(*obj)->getTx(),toCOORD((*obj)->getCoord()),(*obj)->getRect(),true,(*obj)->getRotate(),(*obj)->getTxCenter());
             }
         }
         else{
@@ -189,30 +194,96 @@ bool Engine::render(Scripts* script){ // основная функция, вне
     pix.printBitMap();
     return true;
 }
+Engine::Object* Engine::collisionCheck(Engine::Object* obj_toCheck,std::vector<Engine::Object*>* objects){
+    RECT obj_toCheck_Box=obj_toCheck->getCollisionBox();
+    obj_toCheck->collisionSide=0;
+    COORD points[4];
+    points[0]={(SHORT)obj_toCheck_Box.left,(SHORT)obj_toCheck_Box.top};
+    points[1]={(SHORT)obj_toCheck_Box.right,(SHORT)obj_toCheck_Box.top};
+    points[2]={(SHORT)obj_toCheck_Box.right,(SHORT)obj_toCheck_Box.bottom};
+    points[3]={(SHORT)obj_toCheck_Box.left,(SHORT)obj_toCheck_Box.bottom};
+    for(auto obj=objects->begin(); obj!=objects->end() ;obj++){
+        RECT obj_Box=(*obj)->getCollisionBox();
+        bool p1=(points[0].X>obj_Box.left && points[0].X<obj_Box.right && points[0].Y>obj_Box.top && points[0].Y<obj_Box.bottom);
+        bool p2=(points[1].X>obj_Box.left && points[1].X<obj_Box.right && points[1].Y>obj_Box.top && points[1].Y<obj_Box.bottom);
+        bool p3=(points[2].X>obj_Box.left && points[2].X<obj_Box.right && points[2].Y>obj_Box.top && points[2].Y<obj_Box.bottom);
+        bool p4=(points[3].X>obj_Box.left && points[3].X<obj_Box.right && points[3].Y>obj_Box.top && points[3].Y<obj_Box.bottom);
+        if(p1||p2||p3||p4){
+            obj_toCheck->collisionSide=0;
+            if(p1 && p2)
+                obj_toCheck->collisionSide=COLLISION_TOP;
+            if(p2 && p3)
+                obj_toCheck->collisionSide=COLLISION_RIGHT;
+            if(p3 && p4)
+                obj_toCheck->collisionSide=COLLISION_BOTTOM;
+            if(p4 && p1)
+                obj_toCheck->collisionSide=COLLISION_LEFT;
+
+            if(!obj_toCheck->collisionSide){
+                if(p1){
+                    COORD p_normalize={(SHORT)( obj_Box.right-obj_toCheck_Box.left),(SHORT)( obj_Box.bottom-obj_toCheck_Box.top)};
+                    if(p_normalize.X>p_normalize.Y){
+                        obj_toCheck->collisionSide=COLLISION_TOP;
+                    }
+                    else{
+                        obj_toCheck->collisionSide=COLLISION_LEFT;
+                    }
+                }
+                if(p2){
+                    COORD p_normalize={(SHORT)( obj_toCheck_Box.right-obj_Box.left),(SHORT)( obj_Box.bottom-obj_toCheck_Box.top)};
+                    if(p_normalize.X>p_normalize.Y){
+                        obj_toCheck->collisionSide=COLLISION_TOP;
+                    }
+                    else{
+                        obj_toCheck->collisionSide=COLLISION_RIGHT;
+                    }
+                }
+                if(p3){
+                    COORD p_normalize={(SHORT)( obj_toCheck_Box.right-obj_Box.left),(SHORT)( obj_toCheck_Box.bottom-obj_Box.top)};
+                    if(p_normalize.X>p_normalize.Y){
+                        obj_toCheck->collisionSide=COLLISION_BOTTOM;
+                    }
+                    else{
+                        obj_toCheck->collisionSide=COLLISION_RIGHT;
+                    }
+                }
+                if(p4){
+                    COORD p_normalize={(SHORT)( obj_Box.right-obj_toCheck_Box.left),(SHORT)( obj_toCheck_Box.bottom-obj_Box.top)};
+                    if(p_normalize.X>p_normalize.Y){
+                        obj_toCheck->collisionSide=COLLISION_BOTTOM;
+                    }
+                    else{
+                        obj_toCheck->collisionSide=COLLISION_LEFT;
+                    }
+                }
+            }
+            return *obj;
+        }
+    }
+    return nullptr;
+}
 COORD Engine::playerMove(COORD coord){
+    objectCoord oldCoord=player->getCoord();
     if(coord.X==-1 && coord.Y==-1){
         for(auto sym=keyboardInput.begin(); sym<keyboardInput.end() ;sym++){
             std::cout<<*sym<<std::endl;
+            objectCoord Coord=player->getCoord();
             switch(*sym){
                 case 'a':{
-                    objectCoord Coord=player->getCoord();
                     if(Coord.x-1>=0)
                         player->setCoord({Coord.x-1,Coord.y});
                     break;
                 }
                 case 'd':{
-                    objectCoord Coord=player->getCoord();
                     player->setCoord({Coord.x+1,Coord.y});
                     break;
                 }
                 case 'w':{
-                    objectCoord Coord=player->getCoord();
                     if(Coord.y-1>=0)
                     player->setCoord({Coord.x,Coord.y-1});
                     break;
                 }
                 case 's':{
-                    objectCoord Coord=player->getCoord();
                     player->setCoord({Coord.x,Coord.y+1});
                     break;
                 }
@@ -222,6 +293,30 @@ COORD Engine::playerMove(COORD coord){
     else{
         player->setCoord({coord.X,coord.Y});
     }
+    Engine::Object *obj=collisionCheck(player,objects[player->getLvL()]);
+    if(obj){
+        objectCoord newCoord=player->getCoord();
+        if(player->collisionSide==COLLISION_LEFT)
+            player->setCoord({obj->getCollisionBox().right - (player->getCollisionBox().left - player->getCoord().x),newCoord.y});
+        if(player->collisionSide==COLLISION_RIGHT)
+            player->setCoord({obj->getCoord().x-(player->getCollisionBox().right-player->getCoord().x),newCoord.y});
+        if(player->collisionSide==COLLISION_TOP)
+            player->setCoord({newCoord.x,obj->getCollisionBox().bottom -(player->getCollisionBox().top - player->getCoord().y)});
+        if(player->collisionSide==COLLISION_BOTTOM)
+            player->setCoord({newCoord.x,obj->getCollisionBox().top - (player->getCollisionBox().bottom - player->getCoord().y)});
+
+
+    }
+    {
+        RECT playerBox=player->getCollisionBox();
+        HDC hdcMain=GetDC(pix.getWnd());
+        MoveToEx(hdcMain,playerBox.left,playerBox.top,nullptr);
+        LineTo(hdcMain,playerBox.right,playerBox.top);
+        LineTo(hdcMain,playerBox.right,playerBox.bottom);
+        LineTo(hdcMain,playerBox.left,playerBox.bottom);
+        LineTo(hdcMain,playerBox.left,playerBox.top);
+        DeleteDC(hdcMain);
+    }   
     std::cout<<"\n\n\n\n\n\n\n\n\n\n\n\n\n";
     return toCOORD(player->getCoord());
 }
@@ -292,27 +387,22 @@ void Engine::Object::Animation::restart(){
     tickNum=0;
     tick=1;
 }
-std::vector<HBITMAP*> bakeTexture(std::vector<HBITMAP*> front,std::vector<HBITMAP*> behind){
+std::vector<HBITMAP*> Engine::bakeTexture(std::vector<HBITMAP*> front,std::vector<HBITMAP*> behind,COORD center){
     std::vector<HBITMAP*> bakeTX(front.size(),new HBITMAP);
     BITMAP bm;
     GetObject(front[0],sizeof(bm),&bm);
     COORD txSize={(SHORT)bm.bmWidth,(SHORT)bm.bmHeight};
-    for(int i; i!=bakeTX.size();i++){
-        front[i];
+    auto pBehind=behind.begin();
+    for(int i=0; i!=bakeTX.size();i++){
         HBITMAP* tx=new HBITMAP;
-        HDC main=GetDC(0);
-        *tx=CreateCompatibleBitmap(main,txSize.X,txSize.Y);
-        HDC bakeHDC=CreateCompatibleDC(main);
-        HDC tempHDC=CreateCompatibleDC(main);
-        
-        SelectObject(tempHDC,*(front[i]));
-        BitBlt(bakeHDC,0,0,txSize.X,txSize.Y,tempHDC,0,0,SRCCOPY);
+        *tx = pix.bakeHBITMAPs(*(front[i]),**pBehind,center);
 
-        SelectObject(tempHDC,*(behind[i]));
-        BitBlt(bakeHDC,0,0,txSize.X,txSize.Y,tempHDC,0,0,SRCCOPY);
-        DeleteObject(main);
-        DeleteObject(bakeHDC);
-        DeleteObject(tempHDC);
+        bakeTX[i]=tx;
+        bakeTextureVector.push_back(tx);
+
+        pBehind++;
+        if(pBehind==behind.end())
+            pBehind=behind.begin();
     }
     return bakeTX;
 }

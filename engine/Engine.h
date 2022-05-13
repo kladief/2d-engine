@@ -17,7 +17,10 @@
 #include <stdio.h>
 
 #include <functional>
-
+#define COLLISION_LEFT 1
+#define COLLISION_RIGHT 2
+#define COLLISION_TOP 3
+#define COLLISION_BOTTOM 4
 #define ISMOVE(a,b) (a.X==b.X && a.Y==b.Y) ? false:true
 #define toCOORD(a) (COORD){(SHORT)a.x,(SHORT)a.y}
 #define OBJ_PLAYER 1
@@ -58,12 +61,14 @@ class Engine{
 public:
     struct Object{
     private:
+        Engine::Object* collision=nullptr;
         float rotate=0;
         objectCoord coord;
         HBITMAP* tx;
-        bool hard;
-        bool entity;
         RECT txBox;
+        RECT collisionBox;
+        COORD txCenter={-1,-1};
+        int lvl=0;
         float _getAngle(double sin,double cos);
         float scale=0;
         class Animation{
@@ -91,6 +96,14 @@ public:
         Animation* animation=nullptr;
         std::map<std::wstring,Animation*> animations;
     public:
+        int collisionSide=0; 
+        RECT getCollisionBox(){return (RECT){collisionBox.left+coord.x,collisionBox.top+coord.y,collisionBox.right+coord.x,collisionBox.bottom+coord.y};} 
+        void setCollisionBox(RECT collisionBox){this->collisionBox=collisionBox;} 
+        void setCollision(Object* collision){this->collision=collision;}
+        Object* getCollision(){return collision;}
+        bool hard=false;
+        void setTxCenter(COORD txCenter){this->txCenter=txCenter;}
+        COORD getTxCenter(){return (scale) ? (COORD){(SHORT)(txCenter.X*scale),(SHORT)(txCenter.Y*scale)}:txCenter;}
         float getRotate(){return rotate;}
         void setRotate(float rotate){this->rotate=rotate;}
         void setRotate(double sin,double cos){this->rotate=_getAngle(sin,cos);}
@@ -102,11 +115,13 @@ public:
         void setCoord(objectCoord COORD){coord=COORD;}
         HBITMAP* getTx(){return tx;}
         void setTx(HBITMAP* TX){tx=TX;}
-        Object(bool HARD=false,objectCoord COORD={0,0}):hard(HARD),coord(COORD){}
+        Object(bool HARD=false, objectCoord COORDs={0,0},COORD TXCENTER={-1,-1}):hard(HARD),coord(COORDs),txCenter(TXCENTER){}
         void setRect(RECT rect){this->txBox=rect;}
         void setScale(float scale){this->scale=scale;}
         RECT* setRect(){return &(this->txBox);}
         RECT getRect();
+        void setLvL(int lvl){this->lvl=lvl;}
+        int getLvL(){return lvl;}
     };
 private:
     Pixel pix;
@@ -118,8 +133,9 @@ private:
     HBITMAP loadImage(wchar_t*);
     mouseButton mouseButtons;
     std::vector<HBITMAP*> bakeTextureVector;
+    Object* collisionCheck(Object*,std::vector<Engine::Object*>*);
 public:
-    std::vector<HBITMAP*> bakeTexture(std::vector<HBITMAP*>,std::vector<HBITMAP*>);
+    std::vector<HBITMAP*> bakeTexture(std::vector<HBITMAP*>,std::vector<HBITMAP*>,COORD center={0,0});
 
     mouseButton getMouseButtons(){return mouseButtons;}
     std::vector<char> getKeyboardInput(){
